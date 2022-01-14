@@ -1,5 +1,6 @@
 #include <MadgwickAHRS.h>
 #include <Wire.h>
+#include <TimerTC3.h>
 
 #define MPU6050_ADDR 0x68
 #define MPU6050_AX  0x3B
@@ -14,11 +15,14 @@
 
 Madgwick MadgwickFilter;
 
+
 const float lpf = 0.95;
 const float ACC_X_OFS = 0.0f, ACC_Y_OFS = 0.0f, ACC_Z_OFS = 0.0f;
 const float ACC_X_GAIN = 16384.0f, ACC_Y_GAIN = 16384.0f, ACC_Z_GAIN = 16384.0f;
 const float GYRO_X_OFS = 0.0f, GYRO_Y_OFS = 0.0f, GYRO_Z_OFS = 0.0f;
 const float GYRO_X_GAIN = 131.0f, GYRO_Y_GAIN = 131.0f, GYRO_Z_GAIN = 131.0f;
+const int SEND_INTERVAL = 100;
+const int BUTTON = 10;
 
 short int raw_accX, raw_accY, raw_accZ;
 short int raw_Temp;
@@ -33,6 +37,9 @@ float rollFromA = 0.0f, pitchFromA = 0.0f;
 
 unsigned long before_time = 0;
 
+bool pushing = false;
+bool push_signal = false;
+
 
 void setup() {
   pinMode(10, INPUT_PULLUP); //リセットボタン
@@ -45,6 +52,8 @@ void setup() {
   Wire.endTransmission();
 
   MadgwickFilter.begin(100);
+  TimerTc3.initialize(SEND_INTERVAL*1000);
+  TimerTc3.attachInterrupt(sendSensor);
 }
 
 void loop() {
@@ -70,50 +79,26 @@ void loop() {
   gyroX = lpf * gyroX + (1 - lpf) * (raw_gyroX - GYRO_X_OFS) / GYRO_X_GAIN;
   gyroY = lpf * gyroY + (1 - lpf) * (raw_gyroY - GYRO_Y_OFS) / GYRO_Y_GAIN;
   gyroZ = lpf * gyroZ + (1 - lpf) * (raw_gyroZ - GYRO_Z_OFS) / GYRO_Z_GAIN;
-  //Serial.printf("%f  %f  %f\n",accX ,accY ,accZ);
 
   //Calc
   MadgwickFilter.updateIMU(gyroX, gyroY, gyroZ, accX, accY, accZ);
-  float pitch = MadgwickFilter.getPitch();
-  float roll = MadgwickFilter.getRoll();
-  float yaw = MadgwickFilter.getYaw();
-  Serial.printf("%f,%f,%f\n",pitch,roll,yaw);
-  
+  pitch = MadgwickFilter.getPitch();
+  roll = MadgwickFilter.getRoll();
+  yaw = MadgwickFilter.getYaw();
 
-
-  /*
-  double dt = (micros() - before_time) / 1000000.0f;
-  before_time = micros();
-  double gx = (gyroX + pre_gyroX) / 2;
-  double gy = (gyroY + pre_gyroY) / 2;
-  double gz = (gyroZ + pre_gyroZ) / 2;
-
-  rollFromA = atan2(accY, accZ) / PI * 180; //重力加速度から計算
-  pitchFromA = atan2(accX, sqrt(accY * accY + accZ * accZ)) / PI * 180; //重力加速度から計算
-
-  raw_roll += gx * dt;
-  raw_pitch += gy * dt;
-  yaw += gz * dt;
-  //roll += raw_pitch * sin(gz * dt * PI / 180);
-  //pitch -= raw_roll * sin(gz * dt * PI / 180);
-
-  //roll = roll*0.98 + rollFromA*0.02;
-  //pitch = pitch*0.98 + pitchFromA*0.02;
-
-  pre_gyroX = gyroX;
-  pre_gyroY = gyroY;
-  pre_gyroZ = gyroZ;
-
-  //Reset
-  if (digitalRead(10)) {
-    Serial.println("");
-    Serial.println("-------------------RESET!-------------------");
-    roll = 0;
-    pitch = 0;
-    yaw = 0;
+  if(!digitalRead(BUTTON)){
+    if(!pushing){
+      pushing = true;
+      push_signal = true;
+    }
   }
+  else{
+    pushing = false;
+  }
+}
 
-  //Serial.printf("%f %f\n",rollFromA ,pitchFromA);
-  Serial.printf("%f %f\n", roll , pitch);
-  */
+void sendSensor(){
+  Serial.printf("%f,%f,%f,%d",pitch,roll,yaw,push_signal);
+  push_signal = false;
+  Serial.println();
 }
